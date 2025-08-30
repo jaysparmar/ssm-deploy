@@ -1,0 +1,49 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --update
+
+      - name: Configure AWS credentials for main
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Update code on EC2 for main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Name,Values=${{ secrets.TARGET_NAME_MAIN }}" \
+            --parameters 'commands=["sudo su ubuntu","sudo git config --global --add safe.directory /var/www/html", "cd /var/www/html && git restore . && sudo git pull origin main && sudo systemctl restart apache2"]' \
+            --comment "Update code and restart Apache"
+
+      - name: Update .env file for main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Name,Values=${{ secrets.TARGET_NAME_MAIN }}" \
+            --parameters 'commands=["echo \"${{ secrets.ENV_MAIN }}\" > /var/www/html/.env"]' \
+            --comment "Update .env file for main"
+
+
+
